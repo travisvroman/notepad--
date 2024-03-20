@@ -3,31 +3,18 @@
 #include "asserts.h"
 #include "core/kmemory.h"
 #include "core/kstring.h"
-#include "platform/filesystem.h"
-#include "platform/platform.h"
 
 // TODO: temporary
 #include <stdarg.h>
+#include <stdio.h>
 
 struct platform_state;
 
 typedef struct logger_system_state {
-    file_handle log_file_handle;
     struct platform_state* platform;
 } logger_system_state;
 
 static logger_system_state* state_ptr;
-
-static void append_to_log_file(const char* message) {
-    if (state_ptr && state_ptr->log_file_handle.is_valid) {
-        // Since the message already contains a '\n', just write the bytes directly.
-        u64 length = string_length(message);
-        u64 written = 0;
-        if (!filesystem_write(&state_ptr->log_file_handle, length, message, &written)) {
-            platform_console_write_error(state_ptr->platform, "ERROR writing to console.log.", LOG_LEVEL_ERROR);
-        }
-    }
-}
 
 b8 logging_initialize(u64* memory_requirement, void* state, void* config) {
     *memory_requirement = sizeof(logger_system_state);
@@ -37,12 +24,6 @@ b8 logging_initialize(u64* memory_requirement, void* state, void* config) {
 
     state_ptr = state;
     state_ptr->platform = 0;
-
-    // Create new/wipe existing log file, then open it.
-    if (!filesystem_open("console.log", FILE_MODE_WRITE, false, &state_ptr->log_file_handle)) {
-        platform_console_write_error(0, "ERROR: Unable to open console.log for writing.", LOG_LEVEL_ERROR);
-        return false;
-    }
 
     return true;
 }
@@ -78,13 +59,10 @@ void log_output(log_level level, const char* message, ...) {
 
     // Print accordingly
     if (is_error) {
-        platform_console_write_error(state_ptr ? state_ptr->platform : 0, out_message, level);
+        fprintf(stderr, "%s", out_message);
     } else {
-        platform_console_write(state_ptr ? state_ptr->platform : 0, out_message, level);
+        fprintf(stdout, "%s", out_message);
     }
-
-    // Queue a copy to be written to the log file.
-    append_to_log_file(out_message);
 }
 
 void report_assertion_failure(const char* expression, const char* message, const char* file, i32 line) {

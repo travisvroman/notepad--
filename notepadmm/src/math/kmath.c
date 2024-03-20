@@ -4,9 +4,6 @@
 #include <stdlib.h>
 
 #include "math/math_types.h"
-#include "platform/platform.h"
-
-static b8 rand_seeded = false;
 
 /**
  * Note that these are here in order to prevent having to import the
@@ -33,28 +30,6 @@ f32 kceil(f32 x) { return ceilf(x); }
 f32 klog2(f32 x) { return log2f(x); }
 
 f32 kpow(f32 x, f32 y) { return powf(x, y); }
-
-i32 krandom(void) {
-    if (!rand_seeded) {
-        srand((u32)platform_get_absolute_time());
-        rand_seeded = true;
-    }
-    return rand();
-}
-
-i32 krandom_in_range(i32 min, i32 max) {
-    if (!rand_seeded) {
-        srand((u32)platform_get_absolute_time());
-        rand_seeded = true;
-    }
-    return (rand() % (max - min + 1)) + min;
-}
-
-f32 kfrandom(void) { return (float)krandom() / (f32)RAND_MAX; }
-
-f32 kfrandom_in_range(f32 min, f32 max) {
-    return min + ((float)krandom() / ((f32)RAND_MAX / (max - min)));
-}
 
 f32 kattenuation_min_max(f32 min, f32 max, f32 x) {
     // TODO: Maybe a good function here would be one with a min/max and falloff value...

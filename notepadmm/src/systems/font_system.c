@@ -1,18 +1,18 @@
 #include "font_system.h"
 
+#include <stdio.h>
+
 #include "containers/darray.h"
-#include "containers/hashtable.h"
+#include "core/asserts.h"
 #include "core/kmemory.h"
 #include "core/kstring.h"
 #include "core/logger.h"
-#include "platform/filesystem.h"
-#include "renderer/renderer.h"
-#include "renderer/renderer_types.h"
+#include "defines.h"
 #include "resources/resource_types.h"
 
 // For system fonts.
 #define STB_TRUETYPE_IMPLEMENTATION
-#include "vendor/stb_truetype.h"
+#include <stb_truetype.h>
 
 typedef struct system_font_variant_data {
     // darray
@@ -36,11 +36,7 @@ typedef struct system_font_lookup {
 
 struct renderer_state;
 typedef struct font_system_state {
-    struct renderer_state* renderer;
-    font_system_config config;
-    hashtable system_font_lookup;
-    system_font_lookup* system_fonts;
-    void* system_hashtable_block;
+    system_font_lookup loaded_font;
 } font_system_state;
 
 static b8 setup_font_data(font_data* font);
@@ -52,80 +48,40 @@ static b8 verify_system_font_size_variant(system_font_lookup* lookup, font_data*
 static font_system_state* state_ptr;
 
 b8 font_system_initialize(u64* memory_requirement, void* memory, void* config) {
-    font_system_config* typed_config = (font_system_config*)config;
-    if (typed_config->max_system_font_count == 0) {
-        KFATAL("font_system_initialize - config.max_system_font_count must be > 0.");
-        return false;
-    }
-
-    // Block of memory will contain state structure, then blocks for arrays, then blocks for hashtables.
-    u64 struct_requirement = sizeof(font_system_state);
-    u64 sys_array_requirement = sizeof(system_font_lookup) * typed_config->max_system_font_count;
-    u64 sys_hashtable_requirement = sizeof(u16) * typed_config->max_system_font_count;
-    *memory_requirement = struct_requirement + sys_array_requirement + sys_hashtable_requirement;
+    *memory_requirement = sizeof(font_system_state);
 
     if (!memory) {
         return true;
     }
 
     state_ptr = (font_system_state*)memory;
-    state_ptr->config = *typed_config;
-    state_ptr->renderer = typed_config->renderer;
-
-    // The array blocks are after the state. Already allocated, so just set the pointer.
-    void* sys_array_block = (void*)(((u8*)memory) + struct_requirement);
-
-    state_ptr->system_fonts = sys_array_block;
-
-    // Hashtable blocks are after arrays.
-    void* sys_hashtable_block = (void*)(((u8*)sys_array_block) + sys_array_requirement);
-
-    // Create hashtables for font lookups.
-    hashtable_create(sizeof(u16), state_ptr->config.max_system_font_count, sys_hashtable_block, false, &state_ptr->system_font_lookup);
-
-    // Fill both hashtables with invalid references to use as a default.
-    u16 invalid_id = INVALID_ID_U16;
-    hashtable_fill(&state_ptr->system_font_lookup, &invalid_id);
 
     // Invalidate all entries in both arrays.
-    u32 count = state_ptr->config.max_system_font_count;
-    for (u32 i = 0; i < count; ++i) {
-        state_ptr->system_fonts[i].id = INVALID_ID_U16;
-        state_ptr->system_fonts[i].reference_count = 0;
-    }
-
-    // Load up any default fonts.
-    // System fonts.
-    for (u32 i = 0; i < state_ptr->config.default_system_font_count; ++i) {
-        if (!font_system_system_font_load(&state_ptr->config.system_font_configs[i])) {
-            KERROR("Failed to load system font: %s", state_ptr->config.system_font_configs[i].name);
-        }
-    }
+    state_ptr->loaded_font.id = INVALID_ID_U16;
+    state_ptr->loaded_font.reference_count = 0;
 
     return true;
 }
 
 void font_system_shutdown(void* memory) {
     if (memory) {
-        // Cleanup system fonts.
-        for (u16 i = 0; i < state_ptr->config.max_system_font_count; ++i) {
-            if (state_ptr->system_fonts[i].id != INVALID_ID_U16) {
-                // Cleanup each variant.
-                u32 variant_count = darray_length(state_ptr->system_fonts[i].size_variants);
-                for (u32 j = 0; j < variant_count; ++j) {
-                    font_data* data = &state_ptr->system_fonts[i].size_variants[j];
-                    cleanup_font_data(data);
-                }
-                state_ptr->system_fonts[i].id = INVALID_ID_U16;
-
-                darray_destroy(state_ptr->system_fonts[i].size_variants);
-                state_ptr->system_fonts[i].size_variants = 0;
+        // Cleanup system font.
+        if (state_ptr->loaded_font.id != INVALID_ID_U16) {
+            // Cleanup each variant.
+            u32 variant_count = darray_length(state_ptr->loaded_font.size_variants);
+            for (u32 j = 0; j < variant_count; ++j) {
+                font_data* data = &state_ptr->loaded_font.size_variants[j];
+                cleanup_font_data(data);
             }
+            state_ptr->loaded_font.id = INVALID_ID_U16;
+
+            darray_destroy(state_ptr->loaded_font.size_variants);
+            state_ptr->loaded_font.size_variants = 0;
         }
     }
 }
 
-b8 font_system_system_font_load(system_font_config* config) {
+b8 font_system_system_font_load(const char* full_path, u16 default_size) {
     // For system fonts, they can actually contain multiple fonts. For this reason,
     // a copy of the resource's data will be held in each resulting variant, and the
     // resource itself will be released.
@@ -135,30 +91,33 @@ b8 font_system_system_font_load(system_font_config* config) {
     // Open binary font file.
     // Open and read the font file as binary, and save into an allocated
     // buffer on the resource itself.
-    const char* full_path = "../assets/fonts/MesloLGS NF Regular.ttf";
-    file_handle font_binary_handle;
-    if (!filesystem_open(full_path, FILE_MODE_READ, true, &font_binary_handle)) {
-        KERROR("Unable to open binary font file. Load process failed.");
-        return false;
-    }
-    u64 file_size;
-    if (!filesystem_size(&font_binary_handle, &file_size)) {
-        KERROR("Unable to get file size of binary font file. Load process failed.");
-        return false;
-    }
-    void* font_binary = kallocate(file_size, MEMORY_TAG_RESOURCE);
-    u64 binary_size = 0;
-    if (!filesystem_read_all_bytes(&font_binary_handle, font_binary, &binary_size)) {
-        KERROR("Unable to perform binary read on font file. Load process failed.");
-        return false;
+    // const char* full_path = "../assets/fonts/MesloLGS NF Regular.ttf";
+
+    // Open the file in binary mode
+    FILE* fp = fopen(full_path, "rb");
+    if (fp == NULL) {
+        KERROR("Error opening file");
+        return -1;
     }
 
-    // Might still work anyway, so continue.
-    if (binary_size != file_size) {
-        KWARN("Mismatch between filesize and bytes read in font file. File may be corrupt.");
+    // Get the file size
+    fseek(fp, 0, SEEK_END);
+    u64 file_size = ftell(fp);
+    rewind(fp);
+
+    // Allocate a buffer to store the file contents
+    void* font_binary = kallocate(file_size);
+    if (font_binary == NULL) {
+        KERROR("Error allocating memory");
+        fclose(fp);
+        return -1;
     }
 
-    filesystem_close(&font_binary_handle);
+    // Read the file contents into the buffer
+    fread(font_binary, 1, file_size, fp);
+
+    // Close the file
+    fclose(fp);
 
     // End binary font file load.
 
@@ -174,33 +133,9 @@ b8 font_system_system_font_load(system_font_config* config) {
     for (u32 i = 0; i < font_face_count; ++i) {
         system_font_face* face = &fonts[i];
 
-        // Make sure a font with this name doesn't already exist.
-        u16 id = INVALID_ID_U16;
-        if (!hashtable_get(&state_ptr->system_font_lookup, face->name, &id)) {
-            KERROR("Hashtable lookup failed. Font will not be loaded.");
-            return false;
-        }
-        if (id != INVALID_ID_U16) {
-            KWARN("A font named '%s' already exists and will not be loaded again.", config->name);
-            // Not a hard error, return success since it already exists and can be used.
-            return true;
-        }
-
-        // Get a new id
-        for (u16 j = 0; j < state_ptr->config.max_system_font_count; ++j) {
-            if (state_ptr->system_fonts[j].id == INVALID_ID_U16) {
-                id = j;
-                break;
-            }
-        }
-        if (id == INVALID_ID_U16) {
-            KERROR("No space left to allocate a new font. Increase maximum number allowed in font system config.");
-            return false;
-        }
-
         // Obtain the lookup.
-        system_font_lookup* lookup = &state_ptr->system_fonts[id];
-        lookup->binary_size = binary_size;
+        system_font_lookup* lookup = &state_ptr->loaded_font;
+        lookup->binary_size = file_size;
         lookup->font_binary = font_binary;
         lookup->face = string_duplicate(face->name);
         lookup->index = i;
@@ -218,7 +153,7 @@ b8 font_system_system_font_load(system_font_config* config) {
 
         // Create a default size variant.
         font_data variant;
-        if (!create_system_font_variant(lookup, config->default_size, face->name, &variant)) {
+        if (!create_system_font_variant(lookup, default_size, face->name, &variant)) {
             KERROR("Failed to create variant: %s, index %i", face->name, i);
             continue;
         }
@@ -232,31 +167,15 @@ b8 font_system_system_font_load(system_font_config* config) {
         // Add to the lookup's size variants.
         darray_push(lookup->size_variants, variant);
 
-        // Set the entry id here last before updating the hashtable.
-        lookup->id = id;
-        if (!hashtable_set(&state_ptr->system_font_lookup, face->name, &id)) {
-            KERROR("Hashtable set failed on font load.");
-            return false;
-        }
+        lookup->id = 0;
     }
 
     return true;
 }
 
 font_data* font_system_acquire(const char* font_name, u16 font_size) {
-    u16 id = INVALID_ID_U16;
-    if (!hashtable_get(&state_ptr->system_font_lookup, font_name, &id)) {
-        KERROR("System font lookup failed on acquire.");
-        return false;
-    }
-
-    if (id == INVALID_ID_U16) {
-        KERROR("A system font named '%s' was not found. Font acquisition failed.", font_name);
-        return false;
-    }
-
     // Get the lookup.
-    system_font_lookup* lookup = &state_ptr->system_fonts[id];
+    system_font_lookup* lookup = &state_ptr->loaded_font;
 
     // Search the size variants for the correct size.
     u32 count = darray_length(lookup->size_variants);
@@ -295,20 +214,7 @@ b8 font_system_release(const char* name) {
 }
 
 b8 font_system_verify_atlas(font_data* font, const char* text) {
-    u16 id = INVALID_ID_U16;
-    if (!hashtable_get(&state_ptr->system_font_lookup, font->face, &id)) {
-        KERROR("System font lookup failed on acquire.");
-        return false;
-    }
-
-    if (id == INVALID_ID_U16) {
-        KERROR("A system font named '%s' was not found. Font atlas verification failed.", font->face);
-        return false;
-    }
-
-    // Get the lookup.
-    system_font_lookup* lookup = &state_ptr->system_fonts[id];
-
+    system_font_lookup* lookup = &state_ptr->loaded_font;
     return verify_system_font_size_variant(lookup, font, text);
 }
 
@@ -444,8 +350,8 @@ static b8 setup_font_data(font_data* font) {
 }
 
 static void cleanup_font_data(font_data* font) {
-    renderer_texture_destroy(state_ptr->renderer, font->atlas);
-    kfree(font->atlas, sizeof(texture), MEMORY_TAG_TEXTURE);
+    // TODO: destroy texture
+    kfree(font->atlas);
     font->atlas = 0;
 }
 
@@ -456,7 +362,7 @@ static b8 create_system_font_variant(system_font_lookup* lookup, u16 size, const
     out_variant->size = size;
     string_ncopy(out_variant->face, font_name, 255);
     out_variant->internal_data_size = sizeof(system_font_variant_data);
-    out_variant->internal_data = kallocate(out_variant->internal_data_size, MEMORY_TAG_SYSTEM_FONT);
+    out_variant->internal_data = kallocate(out_variant->internal_data_size);
 
     system_font_variant_data* internal_data = (system_font_variant_data*)out_variant->internal_data;
 
@@ -468,17 +374,18 @@ static b8 create_system_font_variant(system_font_lookup* lookup, u16 size, const
     }
     darray_length_set(internal_data->codepoints, 96);
 
-    // Create texture.
-    char font_tex_name[255];
+    // TODO: Create texture.
+    KASSERT_MSG(false, "Texture creation is required.");
+    /*char font_tex_name[255];
     string_format(font_tex_name, "__system_text_atlas_%s_i%i_sz%i__", font_name, lookup->index, size);
-    out_variant->atlas = kallocate(sizeof(texture), MEMORY_TAG_TEXTURE);
+    out_variant->atlas = kallocate(sizeof(texture));
     out_variant->atlas->width = out_variant->atlas_size_x;
     out_variant->atlas->height = out_variant->atlas_size_y;
     out_variant->atlas->channel_count = 4;
     if (!renderer_texture_create(state_ptr->renderer, out_variant->atlas)) {
         KERROR("Failed to create font texture.");
         return false;
-    }
+    }*/
 
     // Obtain some metrics
     internal_data->scale = stbtt_ScaleForPixelHeight(&lookup->info, (f32)size);
@@ -493,9 +400,9 @@ static b8 rebuild_system_font_variant_atlas(system_font_lookup* lookup, font_dat
     system_font_variant_data* internal_data = (system_font_variant_data*)variant->internal_data;
 
     u32 pack_image_size = variant->atlas_size_x * variant->atlas_size_y * sizeof(u8);
-    u8* pixels = kallocate(pack_image_size, MEMORY_TAG_ARRAY);
+    u8* pixels = kallocate(pack_image_size);
     u32 codepoint_count = darray_length(internal_data->codepoints);
-    stbtt_packedchar* packed_chars = kallocate(sizeof(stbtt_packedchar) * codepoint_count, MEMORY_TAG_ARRAY);
+    stbtt_packedchar* packed_chars = kallocate(sizeof(stbtt_packedchar) * codepoint_count);
 
     // Begin packing all known characters into the atlas. This
     // creates a single-channel image with rendered glyphs at the
@@ -522,7 +429,7 @@ static b8 rebuild_system_font_variant_atlas(system_font_lookup* lookup, font_dat
     // Packing complete.
 
     // Convert from single-channel to RGBA, or pack_image_size * 4.
-    u8* rgba_pixels = kallocate(pack_image_size * 4, MEMORY_TAG_ARRAY);
+    u8* rgba_pixels = kallocate(pack_image_size * 4);
     for (u32 j = 0; j < pack_image_size; ++j) {
         rgba_pixels[(j * 4) + 0] = pixels[j];
         rgba_pixels[(j * 4) + 1] = pixels[j];
@@ -531,21 +438,23 @@ static b8 rebuild_system_font_variant_atlas(system_font_lookup* lookup, font_dat
     }
 
     // Write texture data to atlas.
-    if (!renderer_texture_data_set(state_ptr->renderer, variant->atlas, rgba_pixels)) {
+    // TODO: update texture.
+    KASSERT_MSG(false, "Texture updating is required.");
+    /*if (!renderer_texture_data_set(state_ptr->renderer, variant->atlas, rgba_pixels)) {
         KERROR("Failed to write font texture data");
         return false;
-    }
+    }*/
 
     // Free pixel/rgba_pixel data.
-    kfree(pixels, pack_image_size, MEMORY_TAG_ARRAY);
-    kfree(rgba_pixels, pack_image_size * 4, MEMORY_TAG_ARRAY);
+    kfree(pixels);
+    kfree(rgba_pixels);
 
     // Regenerate glyphs
     if (variant->glyphs && variant->glyph_count) {
-        kfree(variant->glyphs, sizeof(font_glyph) * variant->glyph_count, MEMORY_TAG_ARRAY);
+        kfree(variant->glyphs);
     }
     variant->glyph_count = codepoint_count;
-    variant->glyphs = kallocate(sizeof(font_glyph) * codepoint_count, MEMORY_TAG_ARRAY);
+    variant->glyphs = kallocate(sizeof(font_glyph) * codepoint_count);
     for (u16 i = 0; i < variant->glyph_count; ++i) {
         stbtt_packedchar* pc = &packed_chars[i];
         font_glyph* g = &variant->glyphs[i];
@@ -562,13 +471,13 @@ static b8 rebuild_system_font_variant_atlas(system_font_lookup* lookup, font_dat
 
     // Regenerate kernings
     if (variant->kernings && variant->kerning_count) {
-        kfree(variant->kernings, sizeof(font_kerning) * variant->kerning_count, MEMORY_TAG_ARRAY);
+        kfree(variant->kernings);
     }
     variant->kerning_count = stbtt_GetKerningTableLength(&lookup->info);
     if (variant->kerning_count) {
-        variant->kernings = kallocate(sizeof(font_kerning) * variant->kerning_count, MEMORY_TAG_ARRAY);
+        variant->kernings = kallocate(sizeof(font_kerning) * variant->kerning_count);
         // Get the kerning table for the current font.
-        stbtt_kerningentry* kerning_table = kallocate(sizeof(stbtt_kerningentry) * variant->kerning_count, MEMORY_TAG_ARRAY);
+        stbtt_kerningentry* kerning_table = kallocate(sizeof(stbtt_kerningentry) * variant->kerning_count);
         u32 entry_count = stbtt_GetKerningTable(&lookup->info, kerning_table, variant->kerning_count);
         if (entry_count != variant->kerning_count) {
             KERROR("Kerning entry count mismatch: %u->%u", entry_count, variant->kerning_count);
@@ -582,7 +491,7 @@ static b8 rebuild_system_font_variant_atlas(system_font_lookup* lookup, font_dat
             k->amount = kerning_table[i].advance;
         }
 
-        kfree(kerning_table, sizeof(stbtt_kerningentry) * variant->kerning_count, MEMORY_TAG_ARRAY);
+        kfree(kerning_table);
     } else {
         variant->kernings = 0;
     }

@@ -13,7 +13,7 @@ void* _darray_create(u64 length, u64 stride) {
     u64 header_size = sizeof(darray_header);
     u64 array_size = length * stride;
     void* new_array = 0;
-    new_array = kallocate(header_size + array_size, MEMORY_TAG_DARRAY);
+    new_array = kallocate(header_size + array_size);
     kset_memory(new_array, 0, header_size + array_size);
     if (length == 0) {
         KFATAL("_darray_create called with length of 0");
@@ -30,8 +30,7 @@ void darray_destroy(void* array) {
     if (array) {
         u64 header_size = sizeof(darray_header);
         darray_header* header = (darray_header*)((u8*)array - header_size);
-        u64 total_size = header_size + header->capacity * header->stride;
-        kfree(header, total_size, MEMORY_TAG_DARRAY);
+        kfree(header);
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include "core/kmemory.h"
 #include "core/logger.h"
+#include "math/kmath.h"
 
 //
 #include <glad/glad.h>
@@ -9,15 +10,18 @@
 #include <GLFW/glfw3.h>
 #include <stdio.h>
 
+static const f32 vmod = 1000.0f;
+// static const f32 vmod = 1.0f;
+
 static const struct
 {
     float x, y;
     float r, g, b;
 } vertices[3] =
     {
-        {-0.6f, -0.4f, 1.f, 0.f, 0.f},
-        {0.6f, -0.4f, 0.f, 1.f, 0.f},
-        {0.f, 0.6f, 0.f, 0.f, 1.f}};
+        {-0.6f * vmod, -0.4f * vmod, 1.f, 0.f, 0.f},
+        {+0.6f * vmod, -0.4f * vmod, 0.f, 1.f, 0.f},
+        {+0.0f * vmod, +0.6f * vmod, 0.f, 0.f, 1.f}};
 
 static const char* vertex_shader_text =
     "#version 110\n"
@@ -88,7 +92,11 @@ b8 application_run(application_state* out_state) {
     glfwSetKeyCallback(window, key_callback);
 
     glfwMakeContextCurrent(window);
-    gladLoadGL(glfwGetProcAddress);
+    // gladLoadGL(glfwGetProcAddress);
+    if (!gladLoadGL()) {
+        KERROR("Failed to load glad.");
+        return false;
+    }
     glfwSwapInterval(1);
 
     // NOTE: OpenGL error checks have been omitted for brevity
@@ -115,30 +123,37 @@ b8 application_run(application_state* out_state) {
     vcol_location = glGetAttribLocation(program, "vCol");
 
     glEnableVertexAttribArray(vpos_location);
-    glVertexAttribPointer(vpos_location, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(vertices[0]), (void*)0);
+    glVertexAttribPointer(vpos_location, 2, GL_FLOAT, GL_FALSE, sizeof(vertices[0]), (void*)0);
     glEnableVertexAttribArray(vcol_location);
-    glVertexAttribPointer(vcol_location, 3, GL_FLOAT, GL_FALSE,
-                          sizeof(vertices[0]), (void*)(sizeof(float) * 2));
+    glVertexAttribPointer(vcol_location, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]), (void*)(sizeof(float) * 2));
+
+    glClearColor(1, 0, 1, 1);
+    // glCullFace(GL_NONE);
 
     while (!glfwWindowShouldClose(window)) {
-        float ratio;
         int width, height;
-        mat4x4 m, p, mvp;
+        mat4 m, p, mvp;
 
         glfwGetFramebufferSize(window, &width, &height);
-        ratio = width / (float)height;
 
-        glViewport(0, 0, width, height);
+        glViewport(0, height, width, -height);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        mat4x4_identity(m);
-        mat4x4_rotate_Z(m, m, (float)glfwGetTime());
-        mat4x4_ortho(p, -ratio, ratio, -1.f, 1.f, 1.f, -1.f);
-        mat4x4_mul(mvp, p, m);
+        m = mat4_identity();
+        // m = mat4_euler_z((float)glfwGetTime());
+        //
+#if 0
+        float ratio;
+        ratio = width / (float)height;
+        p = mat4_orthographic(-ratio, ratio, -1.f, 1.f, 1.f, -1.f);
+#else
+        p = mat4_orthographic(0, width, height, 0, 100.0f, -100.0f);
+#endif
+        mvp = mat4_mul(p, m);
+        // mvp = mat4_mul(m, p);
 
         glUseProgram(program);
-        glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (const GLfloat*)mvp);
+        glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (const GLfloat*)mvp.data);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         glfwSwapBuffers(window);
@@ -148,7 +163,6 @@ b8 application_run(application_state* out_state) {
     glfwDestroyWindow(window);
 
     glfwTerminate();
-    exit(EXIT_SUCCESS);
 
     return true;
 }

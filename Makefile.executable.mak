@@ -66,7 +66,7 @@ else
 		INCLUDE_FLAGS := -I./$(ASSEMBLY)/src $(ADDL_INC_FLAGS)
 		# NOTE: Equivalent of the linux version above, this ensures that symbols linking against are resolved.
 		# Discovered this here: https://stackoverflow.com/questions/26971333/what-is-clangs-equivalent-to-no-undefined-gcc-flag
-		LINKER_FLAGS :=-Wl,-undefined,error -L./$(BUILD_DIR) $(ADDL_LINK_FLAGS) -Wl,-rpath,.
+		LINKER_FLAGS :=-Wl,-undefined,error -L./$(BUILD_DIR) $(ADDL_LINK_FLAGS) -L./$(BUILD_DIR)/../vendor/lib/glfw/macos/lib-arm64 -lglfw3 -framework Cocoa -framework OpenGL -framework IOKit -Wl,-rpath,.
 		# .c files
 		SRC_FILES := $(shell find $(ASSEMBLY) -name *.c)
 		# directories with .h files

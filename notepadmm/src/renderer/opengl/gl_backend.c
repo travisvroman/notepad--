@@ -1,3 +1,4 @@
+/*
 #include "gl_backend.h"
 
 #include <glad/glad.h>
@@ -138,3 +139,4 @@ b8 gl_renderer_texture_data_set(gl_context* context, struct texture* t, const u8
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
 }
+*/

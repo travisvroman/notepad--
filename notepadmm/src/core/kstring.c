@@ -145,7 +145,7 @@ b8 codepoint_is_whitespace(i32 codepoint) {
 
 char* string_duplicate(const char* str) {
     u64 length = string_length(str);
-    char* copy = kallocate(length + 1, MEMORY_TAG_STRING);
+    char* copy = kallocate(length + 1);
     kcopy_memory(copy, str, length);
     copy[length] = 0;
     return copy;
@@ -153,10 +153,7 @@ char* string_duplicate(const char* str) {
 
 void string_free(char* str) {
     if (str) {
-        // NOTE: Using kfree instead of aligned version because this might be
-        // called without the memory system being initialized (i.e. unit tests).
-        u64 length = string_length(str);
-        kfree(str, length + 1, MEMORY_TAG_STRING);
+        kfree(str);
     } else {
         // TODO: report null ptr?
     }
@@ -627,7 +624,7 @@ u32 string_split(const char* str, char delimiter, char*** str_darray, b8 trim_en
             }
             // Add new entry
             if (trimmed_length > 0 || include_empty) {
-                char* entry = kallocate(sizeof(char) * (trimmed_length + 1), MEMORY_TAG_STRING);
+                char* entry = kallocate(sizeof(char) * (trimmed_length + 1));
                 if (trimmed_length == 0) {
                     entry[0] = 0;
                 } else {
@@ -660,7 +657,7 @@ u32 string_split(const char* str, char delimiter, char*** str_darray, b8 trim_en
     }
     // Add new entry
     if (trimmed_length > 0 || include_empty) {
-        char* entry = kallocate(sizeof(char) * (trimmed_length + 1), MEMORY_TAG_STRING);
+        char* entry = kallocate(sizeof(char) * (trimmed_length + 1));
         if (trimmed_length == 0) {
             entry[0] = 0;
         } else {
@@ -681,8 +678,7 @@ void string_cleanup_split_array(char** str_darray) {
         u32 count = darray_length(str_darray);
         // Free each string.
         for (u32 i = 0; i < count; ++i) {
-            u32 len = string_length(str_darray[i]);
-            kfree(str_darray[i], sizeof(char) * (len + 1), MEMORY_TAG_STRING);
+            kfree(str_darray[i]);
         }
 
         // Clear the darray
@@ -782,14 +778,14 @@ b8 string_parse_array_length(const char* str, u32* out_length) {
 void kstring_ensure_allocated(kstring* string, u32 length) {
     if (string) {
         if (string->allocated < length + 1) {
-            char* new_data = kallocate(sizeof(char) * length + 1, MEMORY_TAG_STRING);
+            char* new_data = kallocate(sizeof(char) * length + 1);
             if (string->data) {
                 // Copy over data if there is data to copy.
                 if (string->length > 0) {
                     string_ncopy(new_data, string->data, string->length);
                 }
                 // Clean up old data
-                kfree(string->data, sizeof(char) * string->length + 1, MEMORY_TAG_STRING);
+                kfree(string->data);
             }
 
             string->data = new_data;
@@ -828,7 +824,7 @@ void kstring_from_cstring(const char* source, kstring* out_string) {
 
 void kstring_destroy(kstring* string) {
     if (string) {
-        kfree(string->data, sizeof(char) * string->allocated, MEMORY_TAG_STRING);
+        kfree(string->data);
         kzero_memory(string, sizeof(kstring));
     }
 }

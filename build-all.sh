@@ -27,8 +27,8 @@ fi
 echo "$ACTION_STR everything on $PLATFORM ($TARGET)..."
 
 
-# Testbed
-make -f Makefile.executable.mak $ACTION TARGET=$TARGET ASSEMBLY=notepadmm ADDL_INC_FLAGS="-I$VULKAN_SDK/include" ADDL_LINK_FLAGS="-lvulkan -lshaderc_shared -L$VULKAN_SDK/lib"
+# Main application
+make -f Makefile.executable.mak $ACTION TARGET=$TARGET ASSEMBLY=notepadmm ADDL_INC_FLAGS="-I./vendor/include" ADDL_LINK_FLAGS=""
 
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]
