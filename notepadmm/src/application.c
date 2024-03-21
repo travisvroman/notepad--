@@ -4,31 +4,23 @@
 #include "core/logger.h"
 #include "math/kmath.h"
 
-//
+// GLAD import must come before GLFW.
 #include <glad/glad.h>
-//
+// Ensure GLFW comes afterward.
 #include <GLFW/glfw3.h>
 #include <stdio.h>
 
-static const f32 vmod = 1000.0f;
-// static const f32 vmod = 1.0f;
-
-static const struct
-{
+typedef struct vertex_2df {
     float x, y;
     float r, g, b;
-} vertices[3] =
-    {
-        {-0.6f * vmod, -0.4f * vmod, 1.f, 0.f, 0.f},
-        {+0.6f * vmod, -0.4f * vmod, 0.f, 1.f, 0.f},
-        {+0.0f * vmod, +0.6f * vmod, 0.f, 0.f, 1.f}};
+} vertex_2df;
 
 static const char* vertex_shader_text =
-    "#version 110\n"
+    "#version 330 core\n"
     "uniform mat4 MVP;\n"
-    "attribute vec3 vCol;\n"
-    "attribute vec2 vPos;\n"
-    "varying vec3 color;\n"
+    "layout (location = 0) in vec2 vPos;\n"
+    "layout (location = 1) in vec3 vCol;\n"
+    "out vec3 color;\n"
     "void main()\n"
     "{\n"
     "    gl_Position = MVP * vec4(vPos, 0.0, 1.0);\n"
@@ -36,11 +28,12 @@ static const char* vertex_shader_text =
     "}\n";
 
 static const char* fragment_shader_text =
-    "#version 110\n"
-    "varying vec3 color;\n"
+    "#version 330 core\n"
+    "in vec3 color;\n"
+    "out vec4 colour;\n"
     "void main()\n"
     "{\n"
-    "    gl_FragColor = vec4(color, 1.0);\n"
+    "    colour = vec4(color, 1.0);\n"
     "}\n";
 
 static void error_callback(int error, const char* description) {
@@ -70,7 +63,7 @@ b8 application_run(application_state* out_state) {
     out_state->is_running = true;
 
     GLFWwindow* window;
-    GLuint vertex_buffer, vertex_shader, fragment_shader, program;
+    GLuint vao, vbo, ibo, vertex_shader, fragment_shader, program;
     GLint mvp_location, vpos_location, vcol_location;
 
     glfwSetErrorCallback(error_callback);
@@ -82,6 +75,10 @@ b8 application_run(application_state* out_state) {
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#ifdef __APPLE__
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);  // uncomment this statement to fix compilation on OS X
+#endif
 
     window = glfwCreateWindow(out_state->width, out_state->height, "Notepad--", NULL, NULL);
     if (!window) {
@@ -101,22 +98,73 @@ b8 application_run(application_state* out_state) {
 
     // NOTE: OpenGL error checks have been omitted for brevity
 
-    glGenBuffers(1, &vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    f32 vmin = 1.0f;
+    f32 vmax = 50.0f;
+    vertex_2df vertices[4];
+    vertices[0] = (vertex_2df){vmin, vmin, 1.f, 0.f, 0.f};
+    vertices[1] = (vertex_2df){vmax, vmin, 0.f, 1.f, 0.f};
+    vertices[2] = (vertex_2df){vmin, vmax, 0.f, 0.f, 1.f};
+    vertices[3] = (vertex_2df){vmax, vmax, 1.f, 1.f, 1.f};
+
+    u32 indices[6] = {
+        0, 1, 2,
+        2, 1, 3};
+
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_2df) * 4, vertices, GL_STATIC_DRAW);
+
+    glGenBuffers(1, &ibo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u32) * 6, indices, GL_STATIC_DRAW);
 
     vertex_shader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertex_shader, 1, &vertex_shader_text, NULL);
     glCompileShader(vertex_shader);
+    GLint isCompiled = 0;
+    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &isCompiled);
+    if (isCompiled == GL_FALSE) {
+        GLint maxLength = 0;
+        glGetShaderiv(vertex_shader, GL_INFO_LOG_LENGTH, &maxLength);
+
+        // The maxLength includes the NULL character
+        char* errorLog = kallocate(sizeof(char) * maxLength);
+        glGetShaderInfoLog(vertex_shader, maxLength, &maxLength, &errorLog[0]);
+        KERROR("Error compiling vertex_shader: %s", errorLog);
+
+        // Provide the infolog in whatever manor you deem best.
+        // Exit with failure.
+        glDeleteShader(vertex_shader);  // Don't leak the shader.
+        return false;
+    }
 
     fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragment_shader, 1, &fragment_shader_text, NULL);
     glCompileShader(fragment_shader);
+    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &isCompiled);
+    if (isCompiled == GL_FALSE) {
+        GLint maxLength = 0;
+        glGetShaderiv(fragment_shader, GL_INFO_LOG_LENGTH, &maxLength);
+
+        // The maxLength includes the NULL character
+        char* errorLog = kallocate(sizeof(char) * maxLength);
+        glGetShaderInfoLog(fragment_shader, maxLength, &maxLength, &errorLog[0]);
+        KERROR("Error compiling fragment_shader: %s", errorLog);
+
+        // Provide the infolog in whatever manor you deem best.
+        // Exit with failure.
+        glDeleteShader(fragment_shader);  // Don't leak the shader.
+        return false;
+    }
 
     program = glCreateProgram();
     glAttachShader(program, vertex_shader);
     glAttachShader(program, fragment_shader);
     glLinkProgram(program);
+    KINFO("Shader compiled and linked successfully.");
 
     mvp_location = glGetUniformLocation(program, "MVP");
     vpos_location = glGetAttribLocation(program, "vPos");
@@ -128,33 +176,35 @@ b8 application_run(application_state* out_state) {
     glVertexAttribPointer(vcol_location, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]), (void*)(sizeof(float) * 2));
 
     glClearColor(1, 0, 1, 1);
-    // glCullFace(GL_NONE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CW);
 
     while (!glfwWindowShouldClose(window)) {
+        // Prepare frame
         int width, height;
-        mat4 m, p, mvp;
-
         glfwGetFramebufferSize(window, &width, &height);
 
-        glViewport(0, height, width, -height);
+        // Begin frame
+        glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        m = mat4_identity();
-        // m = mat4_euler_z((float)glfwGetTime());
-        //
-#if 0
-        float ratio;
-        ratio = width / (float)height;
-        p = mat4_orthographic(-ratio, ratio, -1.f, 1.f, 1.f, -1.f);
-#else
-        p = mat4_orthographic(0, width, height, 0, 100.0f, -100.0f);
-#endif
-        mvp = mat4_mul(p, m);
-        // mvp = mat4_mul(m, p);
+        mat4 model = mat4_identity();
+        model = mat4_euler_z((float)glfwGetTime());
+        mat4 projection = mat4_orthographic(0, width, height, 0, -100.0f, 100.0f);
+
+        /* mat4 mvp = mat4_mul(projection, model); */
+        mat4 mvp = mat4_mul(model, projection);
 
         glUseProgram(program);
-        glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (const GLfloat*)mvp.data);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(vao);
+
+        // Uniforms
+        glUniformMatrix4fv(mvp_location, 1, false, (const GLfloat*)mvp.data);
+
+        // Draw
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         glfwSwapBuffers(window);
         glfwPollEvents();

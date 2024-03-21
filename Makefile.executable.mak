@@ -13,7 +13,7 @@ ifeq ($(OS),Windows_NT)
 	EXTENSION := .exe
 	COMPILER_FLAGS := -Wall -Werror -Wvla -Werror=vla -Wgnu-folding-constant -Wno-missing-braces -fdeclspec -Wstrict-prototypes
 	INCLUDE_FLAGS := -I$(ASSEMBLY)\src $(ADDL_INC_FLAGS)
-	LINKER_FLAGS := -L$(BUILD_DIR) $(ADDL_LINK_FLAGS) -Xlinker /INCREMENTAL
+	LINKER_FLAGS := -L$(BUILD_DIR) $(ADDL_LINK_FLAGS) -L./$(BUILD_DIR)\..\vendor\lib\glfw\win64\lib-static-ucrt -lglfw3dll -Xlinker /INCREMENTAL
 	DEFINES += -D_CRT_SECURE_NO_WARNINGS
 
 # Make does not offer a recursive wildcard function, and Windows needs one, so here it is:

@@ -24,7 +24,7 @@ REM del bin\*.pdb
 ECHO "%ACTION_STR% everything on %PLATFORM% (%TARGET%)..."
 
 REM Main application
-make -f "Makefile.executable.mak" %ACTION% TARGET=%TARGET% ASSEMBLY=notepad-- ADDL_INC_FLAGS="-Inotepad--\vendor\glad\include" ADDL_LINK_FLAGS="-lopengl32 -luser32 -lgdi32"
+make -f "Makefile.executable.mak" %ACTION% TARGET=%TARGET% ASSEMBLY=notepadmm ADDL_INC_FLAGS="-I./vendor/include" ADDL_LINK_FLAGS="-lopengl32 -luser32 -lgdi32"
 IF %ERRORLEVEL% NEQ 0 (echo Error:%ERRORLEVEL% && exit)
 
 ECHO All assemblies %ACTION_STR_PAST% successfully on %PLATFORM% (%TARGET%).

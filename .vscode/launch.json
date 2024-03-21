@@ -22,7 +22,7 @@
             },
             "windows": {
                 "type": "cppvsdbg",
-                "program": "${workspaceFolder}/bin/notepad--.exe",
+                "program": "${workspaceFolder}/bin/notepadmm.exe",
                 // cppvsdbg requires this instead of externalConsole
                 "console": "integratedTerminal",
             }

@@ -1098,17 +1098,25 @@ KINLINE mat4 mat4_orthographic(f32 left, f32 right, f32 bottom, f32 top,
                                f32 near_clip, f32 far_clip) {
     mat4 out_matrix = mat4_identity();
 
-    f32 lr = 1.0f / (left - right);
-    f32 bt = 1.0f / (bottom - top);
-    f32 nf = 1.0f / (near_clip - far_clip);
+    // f32 lr = 1.0f / (left - right);
+    // f32 bt = 1.0f / (bottom - top);
+    // f32 nf = 1.0f / (near_clip - far_clip);
 
-    out_matrix.data[0] = -2.0f * lr;
-    out_matrix.data[5] = -2.0f * bt;
-    out_matrix.data[10] = 2.0f * nf;
+    // out_matrix.data[0] = -2.0f * lr;
+    // out_matrix.data[5] = -2.0f * bt;
+    // out_matrix.data[10] = 2.0f * nf;
 
-    out_matrix.data[12] = (left + right) * lr;
-    out_matrix.data[13] = (top + bottom) * bt;
-    out_matrix.data[14] = (far_clip + near_clip) * nf;
+    // out_matrix.data[12] = (left + right) * lr;
+    // out_matrix.data[13] = (top + bottom) * bt;
+    // out_matrix.data[14] = (far_clip + near_clip) * nf;
+
+    out_matrix.data[0] = 2.0f / (right - left);
+    out_matrix.data[5] = 2.0f / (top - bottom);
+    out_matrix.data[10] = -2.0f / (far_clip - near_clip);
+    out_matrix.data[12] = -(right + left) / (right - left);
+    out_matrix.data[13] = -(top + bottom) / (top - bottom);
+    out_matrix.data[14] = -(far_clip + near_clip) / (far_clip - near_clip);
+    // out_matrix.data[15] = 1;
 
     return out_matrix;
 }
@@ -1947,7 +1955,7 @@ KINLINE void rgbu_to_u32(u32 r, u32 g, u32 b, u32 *out_u32) {
 KINLINE void u32_to_rgb(u32 rgbu, u32 *out_r, u32 *out_g, u32 *out_b) {
     *out_r = (rgbu >> 16) & 0x0FF;
     *out_g = (rgbu >> 8) & 0x0FF;
-    *out_b = (rgbu)&0x0FF;
+    *out_b = (rgbu) & 0x0FF;
 }
 
 /**
