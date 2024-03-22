@@ -23,8 +23,6 @@ typedef struct applicaton_state {
     b8 is_running;
 
     b8 is_suspended;
-    i16 width;
-    i16 height;
 
     // Indicates if the window is currently being resized.
     b8 resizing;

@@ -3,7 +3,7 @@ let s:so_save = &g:so | let s:siso_save = &g:siso | setg so=0 siso=0 | setl so=-
 let v:this_session=expand("<sfile>:p")
 silent only
 silent tabonly
-cd ~/development/notepadmm
+cd ~/development/notepad--
 if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
@@ -13,19 +13,16 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
-badd +154 notepadmm/src/application.c
-badd +1 ~/development/notepadmm/.clangd
-badd +3 ~/development/notepadmm/vendor/src/glad.c
-badd +15 ~/development/notepadmm/notepadmm/src/resources/resource_types.h
-badd +2 ~/development/notepadmm/notepadmm/compile_flags.txt
-badd +42 notepadmm/src/application.h
-badd +66 ~/development/notepadmm/notepadmm/src/renderer/opengl/gl_backend.c
-badd +13 ~/development/notepadmm/notepadmm/src/main.c
-badd +1 ~/development/notepadmm/notepadmm/src/defines.h
-badd +496 notepadmm/src/ui/sui_label.c
+badd +69 notepadmm/src/application.c
+badd +446 notepadmm/src/systems/font_system.c
+badd +14 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_types.h
+badd +1 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.h
+badd +132 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c
+badd +13 ~/development/notepad--/notepadmm/src/platform/platform.h
+badd +80 ~/development/notepad--/notepadmm/src/platform/platform.c
 argglobal
 %argdel
-edit notepadmm/src/application.h
+edit notepadmm/src/application.c
 let s:save_splitbelow = &splitbelow
 let s:save_splitright = &splitright
 set splitbelow splitright
@@ -42,10 +39,9 @@ set winminheight=0
 set winheight=1
 set winminwidth=0
 set winwidth=1
-exe 'vert 1resize ' . ((&columns * 121 + 122) / 244)
-exe 'vert 2resize ' . ((&columns * 122 + 122) / 244)
+exe 'vert 1resize ' . ((&columns * 100 + 100) / 200)
+exe 'vert 2resize ' . ((&columns * 99 + 100) / 200)
 argglobal
-balt ~/development/notepadmm/notepadmm/src/defines.h
 setlocal fdm=manual
 setlocal fde=0
 setlocal fmr={{{,}}}
@@ -56,19 +52,19 @@ setlocal fdn=20
 setlocal fen
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 42 - ((41 * winheight(0) + 28) / 57)
+let s:l = 97 - ((25 * winheight(0) + 18) / 37)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 42
-normal! 018|
+keepjumps 97
+normal! 015|
 wincmd w
 argglobal
-if bufexists(fnamemodify("notepadmm/src/ui/sui_label.c", ":p")) | buffer notepadmm/src/ui/sui_label.c | else | edit notepadmm/src/ui/sui_label.c | endif
+if bufexists(fnamemodify("~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c", ":p")) | buffer ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c | else | edit ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c | endif
 if &buftype ==# 'terminal'
-  silent file notepadmm/src/ui/sui_label.c
+  silent file ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c
 endif
-balt notepadmm/src/application.h
+balt ~/development/notepad--/notepadmm/src/platform/platform.c
 setlocal fdm=manual
 setlocal fde=0
 setlocal fmr={{{,}}}
@@ -79,16 +75,15 @@ setlocal fdn=20
 setlocal fen
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 496 - ((56 * winheight(0) + 28) / 57)
+let s:l = 149 - ((26 * winheight(0) + 18) / 37)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 496
-normal! 02|
+keepjumps 149
+normal! 0
 wincmd w
-2wincmd w
-exe 'vert 1resize ' . ((&columns * 121 + 122) / 244)
-exe 'vert 2resize ' . ((&columns * 122 + 122) / 244)
+exe 'vert 1resize ' . ((&columns * 100 + 100) / 200)
+exe 'vert 2resize ' . ((&columns * 99 + 100) / 200)
 tabnext 1
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0 && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'
   silent exe 'bwipe ' . s:wipebuf

@@ -1,4 +1,3 @@
-/*
 #include "gl_backend.h"
 
 #include <glad/glad.h>
@@ -8,12 +7,7 @@
 #include "core/kmemory.h"
 #include "core/logger.h"
 #include "gl_types.h"
-#include "renderer/opengl/platform/opengl_platform.h"
-#include "renderer/renderer_types.h"
-
-typedef struct texture_internal_data {
-    u32 texture_id;
-} texture_internal_data;
+#include "platform/platform.h"
 
 b8 gl_renderer_initialize(gl_context* context, gl_renderer_config config) {
     if (!context) {
@@ -27,11 +21,6 @@ b8 gl_renderer_initialize(gl_context* context, gl_renderer_config config) {
 
     context->platform = config.platform;
 
-    if (!platform_create_rendering_context(context)) {
-        KERROR("Failed to create platform rendering context. Renderer cannot be initialized.");
-        return false;
-    }
-
     if (!gladLoadGL()) {
         KERROR("Failed to load glad. Renderer cannot be initialized.");
         return false;
@@ -40,14 +29,98 @@ b8 gl_renderer_initialize(gl_context* context, gl_renderer_config config) {
     // Save off the version for reference.
     context->gl_version = (const char*)glGetString(GL_VERSION);
 
-    glClearColor(0.0f, 0.0f, 0.2f, 1.0f);
+    GLuint vao, vbo, ibo, vertex_shader, fragment_shader, program;
+    GLint mvp_location, vpos_location, vcol_location;
+    // NOTE: OpenGL error checks have been omitted for brevity
+
+    f32 vmin = 1.0f;
+    f32 vmax = 50.0f;
+    vertex_2df vertices[4];
+    vertices[0] = (vertex_2df){vmin, vmin, 1.f, 0.f, 0.f};
+    vertices[1] = (vertex_2df){vmax, vmin, 0.f, 1.f, 0.f};
+    vertices[2] = (vertex_2df){vmin, vmax, 0.f, 0.f, 1.f};
+    vertices[3] = (vertex_2df){vmax, vmax, 1.f, 1.f, 1.f};
+
+    u32 indices[6] = {
+        0, 1, 2,
+        2, 1, 3};
+
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_2df) * 4, vertices, GL_STATIC_DRAW);
+
+    glGenBuffers(1, &ibo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u32) * 6, indices, GL_STATIC_DRAW);
+
+    vertex_shader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertex_shader, 1, &vertex_shader_text, NULL);
+    glCompileShader(vertex_shader);
+    GLint isCompiled = 0;
+    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &isCompiled);
+    if (isCompiled == GL_FALSE) {
+        GLint maxLength = 0;
+        glGetShaderiv(vertex_shader, GL_INFO_LOG_LENGTH, &maxLength);
+
+        // The maxLength includes the NULL character
+        char* errorLog = kallocate(sizeof(char) * maxLength);
+        glGetShaderInfoLog(vertex_shader, maxLength, &maxLength, &errorLog[0]);
+        KERROR("Error compiling vertex_shader: %s", errorLog);
+
+        // Provide the infolog in whatever manor you deem best.
+        // Exit with failure.
+        glDeleteShader(vertex_shader);  // Don't leak the shader.
+        return false;
+    }
+
+    fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragment_shader, 1, &fragment_shader_text, NULL);
+    glCompileShader(fragment_shader);
+    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &isCompiled);
+    if (isCompiled == GL_FALSE) {
+        GLint maxLength = 0;
+        glGetShaderiv(fragment_shader, GL_INFO_LOG_LENGTH, &maxLength);
+
+        // The maxLength includes the NULL character
+        char* errorLog = kallocate(sizeof(char) * maxLength);
+        glGetShaderInfoLog(fragment_shader, maxLength, &maxLength, &errorLog[0]);
+        KERROR("Error compiling fragment_shader: %s", errorLog);
+
+        // Provide the infolog in whatever manor you deem best.
+        // Exit with failure.
+        glDeleteShader(fragment_shader);  // Don't leak the shader.
+        return false;
+    }
+
+    program = glCreateProgram();
+    glAttachShader(program, vertex_shader);
+    glAttachShader(program, fragment_shader);
+    glLinkProgram(program);
+    KINFO("Shader compiled and linked successfully.");
+
+    mvp_location = glGetUniformLocation(program, "MVP");
+    vpos_location = glGetAttribLocation(program, "vPos");
+    vcol_location = glGetAttribLocation(program, "vCol");
+
+    glEnableVertexAttribArray(vpos_location);
+    glVertexAttribPointer(vpos_location, 2, GL_FLOAT, GL_FALSE, sizeof(vertices[0]), (void*)0);
+    glEnableVertexAttribArray(vcol_location);
+    glVertexAttribPointer(vcol_location, 3, GL_FLOAT, GL_FALSE, sizeof(vertices[0]), (void*)(sizeof(float) * 2));
+
+    glClearColor(1, 0, 1, 1);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CW);
 
     return true;
 }
 
 void gl_renderer_shutdown(gl_context* context) {
     if (context) {
-        platform_destroy_rendering_context(context);
+        // TODO:
     }
 }
 
@@ -56,6 +129,16 @@ b8 gl_renderer_frame_prepare(gl_context* context) {
         return false;
     }
 
+    // Make sure to bind the window frambebuffer.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // TODO: should probably only do this on resize...
+    i32 width, height;
+    platform_window_size(context->platform, &width, &height);
+
+    // Ensure the viewport is correct.
+    glViewport(0, 0, width, height);
+
     return true;
 }
 
@@ -63,11 +146,6 @@ b8 gl_renderer_frame_begin(gl_context* context) {
     if (!context) {
         return false;
     }
-    // Make sure to bind the window frambebuffer.
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // Ensure the viewport is correct.
-    glViewport(0, 0, context->framebuffer_width, context->framebuffer_height);
 
     // Clear the screen.
     glClear(GL_COLOR_BUFFER_BIT);
@@ -139,4 +217,3 @@ b8 gl_renderer_texture_data_set(gl_context* context, struct texture* t, const u8
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
 }
-*/

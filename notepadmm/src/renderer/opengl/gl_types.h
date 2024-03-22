@@ -11,6 +11,4 @@ typedef struct gl_context {
     struct gl_platform_data* data;
 
     const char* gl_version;
-
-    u32 framebuffer_width, framebuffer_height;
 } gl_context;
