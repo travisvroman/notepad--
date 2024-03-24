@@ -10,7 +10,7 @@ void font_system_shutdown(void* memory);
 
 KAPI b8 font_system_system_font_load(const char* full_path, u16 default_size);
 
-KAPI font_data* font_system_acquire(const char* font_name, u16 font_size);
+KAPI font_data* font_system_acquire(u16 font_size);
 
 KAPI b8 font_system_release(const char* name);
 

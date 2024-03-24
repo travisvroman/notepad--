@@ -34,7 +34,8 @@ static const char* fragment_shader_text =
     "out vec4 out_colour;\n"
     "void main()\n"
     "{\n"
-    "    out_colour = frag_colour + texture(diffuse, frag_texcoord.xy);\n"
+    "    out_colour = frag_colour * texture(diffuse, frag_texcoord.xy);\n"
+    /* "    out_colour.a = 1.0;\n" */
     "}\n";
 
 static i32 compile_shader(const char* source, GLenum shader_type) {
@@ -81,10 +82,12 @@ b8 gl_renderer_initialize(gl_context* context, gl_renderer_config config) {
     context->gl_version = (const char*)glGetString(GL_VERSION);
 
     // Some global configuration.
-    glClearColor(1, 0, 1, 1);
+    glClearColor(0.1f, 0.1f, 0.1f, 1);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    glFrontFace(GL_CW);
+    glFrontFace(GL_CCW);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Layout for textured 2d vertices.
     context->textured_vertex_2d_layout.attributes = darray_create(gl_vertex_attribute);
@@ -222,6 +225,8 @@ void gl_renderer_on_resize(gl_context* context, u32 width, u32 height) {
 
 gl_texture gl_renderer_texture_create(gl_context* context, u32 width, u32 height) {
     gl_texture t = {0};
+    t.width = width;
+    t.height = height;
 
     glGenTextures(1, &t.texture);
     glBindTexture(GL_TEXTURE_2D, t.texture);
@@ -254,6 +259,13 @@ b8 gl_renderer_texture_data_set(gl_context* context, gl_texture* t, const u8* pi
     return true;
 }
 
+void gl_renderer_texture_bind(gl_context* context, gl_texture* t, u32 unit) {
+    if (t) {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(GL_TEXTURE_2D, t->texture);
+    }
+}
+
 gl_buffer gl_renderer_buffer_create(gl_context* context, u32 element_size, gl_buffer_type type) {
     gl_buffer b = {0};
     b.element_size = element_size;
@@ -271,6 +283,7 @@ void gl_renderer_buffer_upload_data(gl_buffer* b, u32 element_count, void* data)
         b->element_count = element_count;
         glBindBuffer(b->target, b->buffer);
         glBufferData(b->target, b->element_size * element_count, data, b->usage);
+        b->element_count = element_count;
     }
 }
 
@@ -293,6 +306,13 @@ void gl_renderer_buffer_draw(gl_context* context, gl_buffer* b) {
 void gl_renderer_set_mvp(gl_context* context, mat4 mvp) {
     if (context) {
         glUniformMatrix4fv(context->mvp_location, 1, false, (const GLfloat*)mvp.data);
+    }
+}
+
+void gl_renderer_set_texture(gl_context* context, gl_texture* t) {
+    if (t) {
+        // TODO: texture unit 0 is hardcoded.
+        glUniform1i(context->diffuse_location, 0);
     }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "defines.h"
+#include "renderer/opengl/gl_types.h"
 
 typedef struct font_glyph {
     i32 codepoint;
@@ -20,7 +21,6 @@ typedef struct font_kerning {
     i16 amount;
 } font_kerning;
 
-struct texture;
 typedef struct font_data {
     char face[256];
     u32 size;
@@ -28,7 +28,7 @@ typedef struct font_data {
     i32 baseline;
     i32 atlas_size_x;
     i32 atlas_size_y;
-    struct texture *atlas;
+    gl_texture atlas;
     u32 glyph_count;
     font_glyph *glyphs;
     u32 kerning_count;

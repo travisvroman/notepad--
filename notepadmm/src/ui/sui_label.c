@@ -1,4 +1,4 @@
-/*
+
 #include "sui_label.h"
 
 #include <containers/darray.h>
@@ -11,46 +11,36 @@
 #include <systems/font_system.h>
 
 #include "defines.h"
+#include "renderer/opengl/gl_backend.h"
+#include "renderer/opengl/gl_types.h"
 #include "resources/resource_types.h"
 
 typedef struct sui_label_pending_data {
     u32 quad_count;
     u64 vertex_buffer_size;
-    u64 vertex_buffer_offset;
     u64 index_buffer_size;
-    u64 index_buffer_offset;
     vertex_2d* vertex_buffer_data;
     u32* index_buffer_data;
 } sui_label_pending_data;
 
-static void sui_label_control_render_frame_prepare(struct sui_label* self, const struct frame_data* p_frame_data);
-
-b8 sui_label_control_create(const char* name, const char* font_name, u16 font_size, const char* text, struct sui_label* out_control) {
+b8 sui_label_control_create(gl_context* context, const char* text, struct sui_label* out_control) {
     if (!out_control) {
         return false;
     }
 
+    out_control->context = context;
+
     // Set all controls to visible by default.
     out_control->is_visible = true;
 
-    // Reasonable defaults.
-    out_control->colour = vec4_one();
-
-    out_control->name = string_duplicate(name);
-
-    // Assign the type first
-    out_control->type = type;
-
     // Acquire the font of the correct type and assign its internal data.
     // This also gets the atlas texture.
-    out_control->data = font_system_acquire(font_name, font_size);
+    out_control->data = font_system_acquire(20);  // TODO: load this globally somewhere.
     if (!out_control->data) {
-        KERROR("Unable to acquire font: '%s'. ui_text cannot be created.", font_name);
+        KERROR("Unable to acquire font. ui_text cannot be created.");
         return false;
     }
 
-    out_control->vertex_buffer_offset = INVALID_ID_U64;
-    out_control->vertex_buffer_size = INVALID_ID_U64;
     out_control->index_buffer_offset = INVALID_ID_U64;
     out_control->index_buffer_size = INVALID_ID_U64;
 
@@ -64,27 +54,17 @@ b8 sui_label_control_create(const char* name, const char* font_name, u16 font_si
         sui_label_text_set(out_control, "");
     }
 
-    out_control->instance_id = INVALID_ID;
-    out_control->frame_number = INVALID_ID_U64;
+    // Init "vao"
+    {
+        out_control->instance_id = gl_renderer_acquire_instance(context);
+        gl_renderer_bind_instance(context, out_control->instance_id);
 
-    // Acquire resources for font texture map.
-    // TODO: Offload this somewhere else.
-    texture_map* maps[1] = {&out_control->data->atlas};
-    shader* s = shader_system_get("Shader.StandardUI");
-    u16 atlas_location = s->uniforms[s->instance_sampler_indices[0]].index;
-    shader_instance_resource_config instance_resource_config = {0};
-    // Map count for this type is known.
-    shader_instance_uniform_texture_config atlas_texture = {0};
-    atlas_texture.uniform_location = atlas_location;
-    atlas_texture.texture_map_count = 1;
-    atlas_texture.texture_maps = maps;
+        // Create buffers.
+        out_control->vertex_buffer = gl_renderer_buffer_create(context, sizeof(vertex_2d), GL_BUFFER_TYPE_VERTEX);
+        out_control->index_buffer = gl_renderer_buffer_create(context, sizeof(u32), GL_BUFFER_TYPE_INDEX);
 
-    instance_resource_config.uniform_config_count = 1;
-    instance_resource_config.uniform_configs = &atlas_texture;
-
-    if (!renderer_shader_instance_resources_acquire(s, &instance_resource_config, &out_control->instance_id)) {
-        KFATAL("Unable to acquire shader resources for font texture map.");
-        return false;
+        gl_renderer_configure_instance_layout(context, &context->textured_vertex_2d_layout);
+        gl_renderer_unbind_instance(context);
     }
 
     // Verify atlas has the glyphs needed.
@@ -97,139 +77,80 @@ b8 sui_label_control_create(const char* name, const char* font_name, u16 font_si
 }
 
 void sui_label_control_destroy(struct sui_label* self) {
-    sui_base_control_destroy(self);
+    // TODO: destroy this
 }
 
 b8 sui_label_control_load(struct sui_label* self) {
-    if (!sui_base_control_load(self)) {
-        return false;
-    }
-
-    sui_label* out_control = self->internal_data;
-
-    if (out_control->text && typed_data->text[0] != 0) {
+    if (self->text && self->text[0] != 0) {
         // Flag it as dirty to ensure it gets updated on the next frame.
-        out_control->is_dirty = true;
+        self->is_dirty = true;
     }
 
     return true;
 }
 
 void sui_label_control_unload(struct sui_label* self) {
-    sui_label* out_control = self->internal_data;
-
-    if (out_control->text) {
-        u32 text_length = string_length(out_control->text);
-        kfree(out_control->text, sizeof(char) * text_length + 1, MEMORY_TAG_STRING);
-        out_control->text = 0;
+    if (self->text) {
+        kfree(self->text);
+        self->text = 0;
     }
 
-    // Free from the vertex buffer.
-    renderbuffer* vertex_buffer = renderer_renderbuffer_get(RENDERBUFFER_TYPE_VERTEX);
-    if (out_control->vertex_buffer_offset != INVALID_ID_U64) {
-        if (out_control->max_text_length > 0) {
-            renderer_renderbuffer_free(vertex_buffer, sizeof(vertex_2d) * 4 * out_control->max_quad_count, typed_data->vertex_buffer_offset);
-        }
-        out_control->vertex_buffer_offset = INVALID_ID_U64;
-    }
-
-    // Free from the index buffer.
-    if (out_control->index_buffer_offset != INVALID_ID_U64) {
-        static const u64 quad_index_size = (sizeof(u32) * 6);
-        renderbuffer* index_buffer = renderer_renderbuffer_get(RENDERBUFFER_TYPE_INDEX);
-        if (out_control->max_text_length > 0 || typed_data->index_buffer_offset != INVALID_ID_U64) {
-            renderer_renderbuffer_free(index_buffer, quad_index_size * out_control->max_quad_count, typed_data->index_buffer_offset);
-        }
-        out_control->index_buffer_offset = INVALID_ID_U64;
-    }
-
-    // Release resources for font texture map.
-    shader* ui_shader = shader_system_get("Shader.StandardUI");  // TODO: text shader.
-    if (!renderer_shader_instance_resources_release(ui_shader, out_control->instance_id)) {
-        KFATAL("Unable to release shader resources for font texture map.");
-    }
-    out_control->instance_id = INVALID_ID;
+    // TODO: Unload stuff.
 }
 
 b8 sui_label_control_update(struct sui_label* self, struct frame_data* p_frame_data) {
-    if (!sui_base_control_update(self, p_frame_data)) {
-        return false;
-    }
-
-    //
-
     return true;
 }
 
-b8 sui_label_control_render(struct sui_label* self, struct frame_data* p_frame_data, standard_ui_render_data* render_data) {
-    if (!sui_base_control_render(self, p_frame_data, render_data)) {
-        return false;
-    }
+b8 sui_label_control_render(struct sui_label* self, mat4 projection) {
+    mat4 model = mat4_translation((vec3){0, 20, 0});
+    mat4 mvp = mat4_mul(model, projection);
+    // Uniforms
+    gl_renderer_set_mvp(self->context, mvp);
 
-    sui_label* out_control = self->internal_data;
+    // Set diffuse
+    gl_renderer_texture_bind(self->context, &self->data->atlas, 0);
+    gl_renderer_set_texture(self->context, &self->data->atlas);
 
-    if (out_control->quad_count && typed_data->vertex_buffer_offset != INVALID_ID_U64) {
-        standard_ui_renderable renderable = {0};
-        renderable.render_data.unique_id = self->id.uniqueid;
-        renderable.render_data.material = 0;
-        renderable.render_data.vertex_count = out_control->quad_count * 4;
-        renderable.render_data.vertex_buffer_offset = out_control->vertex_buffer_offset;
-        renderable.render_data.vertex_element_size = sizeof(vertex_2d);
-        renderable.render_data.index_count = out_control->quad_count * 6;
-        renderable.render_data.index_buffer_offset = out_control->index_buffer_offset;
-        renderable.render_data.index_element_size = sizeof(u32);
-
-        // NOTE: Override the default UI atlas and use that of the loaded font instead.
-        renderable.atlas_override = &out_control->data->atlas;
-
-        renderable.render_data.model = transform_world_get(&self->xform);
-        renderable.render_data.diffuse_colour = out_control->colour;
-
-        renderable.instance_id = &out_control->instance_id;
-        renderable.frame_number = &out_control->frame_number;
-        renderable.draw_index = &out_control->draw_index;
-
-        darray_push(render_data->renderables, renderable);
-    }
+    // Draw
+    // NOTE: Every "instance" of a thing will need to bind the instance first before draw.
+    gl_renderer_bind_instance(self->context, self->instance_id);
+    gl_renderer_buffer_draw(self->context, &self->index_buffer);
 
     return true;
 }
 
 void sui_label_text_set(struct sui_label* self, const char* text) {
     if (self) {
-        sui_label* out_control = self->internal_data;
-
         // If strings are already equal, don't do anything.
-        if (out_control->text && strings_equal(text, typed_data->text)) {
+        if (self->text && strings_equal(text, self->text)) {
             return;
         }
 
-        if (out_control->text) {
-            u32 text_length = string_length(out_control->text);
-            kfree(out_control->text, sizeof(char) * text_length + 1, MEMORY_TAG_STRING);
+        if (self->text) {
+            kfree(self->text);
         }
 
-        out_control->text = string_duplicate(text);
+        self->text = string_duplicate(text);
 
         // NOTE: Only bother with verification and setting the dirty flag for non-empty strings.
-        u32 length = string_length(out_control->text);
+        u32 length = string_length(self->text);
         if (length > 0) {
             // Verify atlas has the glyphs needed.
-            if (!font_system_verify_atlas(out_control->data, text)) {
+            if (!font_system_verify_atlas(self->data, text)) {
                 KERROR("Font atlas verification failed.");
             }
 
-            out_control->is_dirty = true;
+            self->is_dirty = true;
         } else {
-            out_control->is_dirty = false;
+            self->is_dirty = false;
         }
     }
 }
 
 const char* sui_label_text_get(struct sui_label* self) {
-    if (self && self->internal_data) {
-        sui_label* out_control = self->internal_data;
-        return out_control->text;
+    if (self) {
+        return self->text;
     }
     return 0;
 }
@@ -257,8 +178,8 @@ static font_kerning* kerning_from_codepoints(font_data* font, i32 codepoint_0, i
     return 0;
 }
 
-static b8 regenerate_label_geometry(const sui_label* self, sui_label_pending_data* pending_data) {
-    sui_label* out_control = self->internal_data;
+static b8 regenerate_label_geometry(sui_label* self, sui_label_pending_data* pending_data) {
+    sui_label* out_control = self;
 
     // Get the UTF-8 string length
     u32 text_length_utf8 = string_utf8_length(out_control->text);
@@ -267,7 +188,7 @@ static b8 regenerate_label_geometry(const sui_label* self, sui_label_pending_dat
     // Iterate the string once and count how many quads are required. This allows
     // characters which don't require rendering (spaces, tabs, etc.) to be skipped.
     pending_data->quad_count = 0;
-    i32* codepoints = kallocate(sizeof(i32) * text_length_utf8, MEMORY_TAG_ARRAY);
+    i32* codepoints = kallocate(sizeof(i32) * text_length_utf8);
     for (u32 c = 0, cp_idx = 0; c < char_length;) {
         i32 codepoint = out_control->text[c];
         u8 advance = 1;
@@ -298,8 +219,8 @@ static b8 regenerate_label_geometry(const sui_label* self, sui_label_pending_dat
     pending_data->vertex_buffer_size = sizeof(vertex_2d) * verts_per_quad * pending_data->quad_count;
     pending_data->index_buffer_size = sizeof(u32) * indices_per_quad * pending_data->quad_count;
     // Temp arrays to hold vertex/index data.
-    pending_data->vertex_buffer_data = kallocate(pending_data->vertex_buffer_size, MEMORY_TAG_ARRAY);
-    pending_data->index_buffer_data = kallocate(pending_data->index_buffer_size, MEMORY_TAG_ARRAY);
+    pending_data->vertex_buffer_data = kallocate(pending_data->vertex_buffer_size);
+    pending_data->index_buffer_data = kallocate(pending_data->index_buffer_size);
 
     // Generate new geometry for each character.
     f32 x = 0;
@@ -352,16 +273,18 @@ static b8 regenerate_label_geometry(const sui_label* self, sui_label_pending_dat
             f32 tmaxx = (f32)(g->x + g->width) / out_control->data->atlas_size_x;
             f32 tminy = (f32)g->y / out_control->data->atlas_size_y;
             f32 tmaxy = (f32)(g->y + g->height) / out_control->data->atlas_size_y;
-            // Flip the y axis for system text
-            if (out_control->type == FONT_TYPE_SYSTEM) {
-                tminy = 1.0f - tminy;
-                tmaxy = 1.0f - tmaxy;
-            }
+            // Flip the y axis for system text. NOTE: Apparently not for GL?
+            /* if (out_control->type == FONT_TYPE_SYSTEM) { */
+            /* tminy = 1.0f - tminy;
+            tmaxy = 1.0f - tmaxy; */
+            /* } */
 
-            vertex_2d p0 = (vertex_2d){vec2_create(minx, miny), vec2_create(tminx, tminy)};
-            vertex_2d p1 = (vertex_2d){vec2_create(maxx, miny), vec2_create(tmaxx, tminy)};
-            vertex_2d p2 = (vertex_2d){vec2_create(maxx, maxy), vec2_create(tmaxx, tmaxy)};
-            vertex_2d p3 = (vertex_2d){vec2_create(minx, maxy), vec2_create(tminx, tmaxy)};
+            // TODO: only setting all colours to white for now...
+            // This will need to be updated once colour schemes and tokenization are working.
+            vertex_2d p0 = (vertex_2d){vec2_create(minx, miny), vec2_create(tminx, tminy), vec4_one()};
+            vertex_2d p1 = (vertex_2d){vec2_create(maxx, miny), vec2_create(tmaxx, tminy), vec4_one()};
+            vertex_2d p2 = (vertex_2d){vec2_create(maxx, maxy), vec2_create(tmaxx, tmaxy), vec4_one()};
+            vertex_2d p3 = (vertex_2d){vec2_create(minx, maxy), vec2_create(tminx, tmaxy), vec4_one()};
 
             // Vertex data
             pending_data->vertex_buffer_data[(q_idx * 4) + 0] = p0;  // 0    3
@@ -387,15 +310,15 @@ static b8 regenerate_label_geometry(const sui_label* self, sui_label_pending_dat
 
     // Clean up.
     if (codepoints) {
-        kfree(codepoints, sizeof(i32) * text_length_utf8, MEMORY_TAG_ARRAY);
+        kfree(codepoints);
     }
 
     return true;
 }
 
-static void sui_label_control_render_frame_prepare(struct sui_label* self, const struct frame_data* p_frame_data) {
+void sui_label_control_render_frame_prepare(struct sui_label* self) {
     if (self) {
-        sui_label* out_control = self->internal_data;
+        sui_label* out_control = self;
         if (out_control->is_dirty) {
             sui_label_pending_data pending_data = {0};
             if (!regenerate_label_geometry(self, &pending_data)) {
@@ -404,74 +327,9 @@ static void sui_label_control_render_frame_prepare(struct sui_label* self, const
                 goto sui_label_frame_prepare_cleanup;
             }
 
-            renderbuffer* vertex_buffer = renderer_renderbuffer_get(RENDERBUFFER_TYPE_VERTEX);
-            renderbuffer* index_buffer = renderer_renderbuffer_get(RENDERBUFFER_TYPE_INDEX);
-
-            u64 old_vertex_size = out_control->vertex_buffer_size;
-            u64 old_vertex_offset = out_control->vertex_buffer_offset;
-            u64 old_index_size = out_control->index_buffer_size;
-            u64 old_index_offset = out_control->index_buffer_offset;
-
-            // Use the new offsets unless a realloc is needed.
-            u64 new_vertex_size = pending_data.vertex_buffer_size;
-            u64 new_vertex_offset = old_vertex_offset;
-            u64 new_index_size = pending_data.index_buffer_size;
-            u64 new_index_offset = old_index_offset;
-
-            // A reallocation is required if the text is longer than it previously was.
-            b8 needs_realloc = pending_data.quad_count > out_control->max_quad_count;
-            if (needs_realloc) {
-                if (!renderer_renderbuffer_allocate(vertex_buffer, new_vertex_size, &pending_data.vertex_buffer_offset)) {
-                    KERROR(
-                        "sui_label_control_render_frame_prepare failed to allocate from the renderer's vertex buffer: size=%u, offset=%u",
-                        new_vertex_size,
-                        pending_data.vertex_buffer_offset);
-                    out_control->quad_count = 0;  // Keep it from drawing.
-                    goto sui_label_frame_prepare_cleanup;
-                }
-                new_vertex_offset = pending_data.vertex_buffer_offset;
-
-                if (!renderer_renderbuffer_allocate(index_buffer, new_index_size, &pending_data.index_buffer_offset)) {
-                    KERROR(
-                        "sui_label_control_render_frame_prepare failed to allocate from the renderer's index buffer: size=%u, offset=%u",
-                        new_index_size,
-                        pending_data.index_buffer_offset);
-                    out_control->quad_count = 0;  // Keep it from drawing.
-                    goto sui_label_frame_prepare_cleanup;
-                }
-                new_index_offset = pending_data.index_buffer_offset;
-            }
-
-            // Load up the data, if there is data to load.
-            if (pending_data.vertex_buffer_data) {
-                if (!renderer_renderbuffer_load_range(vertex_buffer, new_vertex_offset, new_vertex_size, pending_data.vertex_buffer_data, true)) {
-                    KERROR("sui_label_control_render_frame_prepare failed to load data into vertex buffer range: size=%u, offset=%u", new_vertex_size, new_vertex_offset);
-                }
-            }
-            if (pending_data.index_buffer_data) {
-                if (!renderer_renderbuffer_load_range(index_buffer, new_index_offset, new_index_size, pending_data.index_buffer_data, true)) {
-                    KERROR("sui_label_control_render_frame_prepare failed to load data into index buffer range: size=%u, offset=%u", new_index_size, new_index_offset);
-                }
-            }
-
-            if (needs_realloc) {
-                // Release the old vertex/index data from the buffers and update the sizes/offsets.
-                if (old_vertex_offset != INVALID_ID_U64 && old_vertex_size != INVALID_ID_U64) {
-                    if (!renderer_renderbuffer_free(vertex_buffer, old_vertex_size, old_vertex_offset)) {
-                        KERROR("Failed to free from renderer vertex buffer: size=%u, offset=%u", old_vertex_size, old_vertex_offset);
-                    }
-                }
-                if (old_index_offset != INVALID_ID_U64 && old_index_size != INVALID_ID_U64) {
-                    if (!renderer_renderbuffer_free(index_buffer, old_index_size, old_index_offset)) {
-                        KERROR("Failed to free from renderer index buffer: size=%u, offset=%u", old_index_size, old_index_offset);
-                    }
-                }
-
-                out_control->vertex_buffer_offset = new_vertex_offset;
-                out_control->vertex_buffer_size = new_vertex_size;
-                out_control->index_buffer_offset = new_index_offset;
-                out_control->index_buffer_size = new_index_size;
-            }
+            // Upload it
+            gl_renderer_buffer_upload_data(&self->vertex_buffer, pending_data.quad_count * 4, pending_data.vertex_buffer_data);
+            gl_renderer_buffer_upload_data(&self->index_buffer, pending_data.quad_count * 6, pending_data.index_buffer_data);
 
             out_control->quad_count = pending_data.quad_count;
 
@@ -485,12 +343,11 @@ static void sui_label_control_render_frame_prepare(struct sui_label* self, const
 
         sui_label_frame_prepare_cleanup:
             if (pending_data.vertex_buffer_data) {
-                kfree(pending_data.vertex_buffer_data, pending_data.vertex_buffer_size, MEMORY_TAG_ARRAY);
+                kfree(pending_data.vertex_buffer_data);
             }
             if (pending_data.index_buffer_data) {
-                kfree(pending_data.index_buffer_data, pending_data.index_buffer_size, MEMORY_TAG_ARRAY);
+                kfree(pending_data.index_buffer_data);
             }
         }
     }
 }
-*/

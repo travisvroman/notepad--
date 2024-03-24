@@ -2,6 +2,7 @@
 
 #include "defines.h"
 #include "renderer/opengl/gl_types.h"
+#include "ui/sui_label.h"
 
 typedef struct system_state_info {
     u64 state_memory_requirement;
@@ -41,6 +42,8 @@ typedef struct applicaton_state {
 
     gl_buffer vertex_buffer;
     gl_buffer index_buffer;
+
+    sui_label main_text;
 } application_state;
 
 b8 application_run(application_state* out_state);

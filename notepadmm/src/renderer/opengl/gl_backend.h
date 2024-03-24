@@ -24,6 +24,7 @@ void gl_renderer_on_resize(gl_context* context, u32 width, u32 height);
 gl_texture gl_renderer_texture_create(gl_context* context, u32 width, u32 height);
 void gl_renderer_texture_destroy(gl_context* context, gl_texture* t);
 b8 gl_renderer_texture_data_set(gl_context* context, gl_texture* t, const u8* pixels);
+void gl_renderer_texture_bind(gl_context* context, gl_texture* t, u32 unit);
 
 gl_buffer gl_renderer_buffer_create(gl_context* context, u32 element_size, gl_buffer_type type);
 void gl_renderer_buffer_upload_data(gl_buffer* b, u32 element_count, void* data);
@@ -31,6 +32,7 @@ void gl_renderer_buffer_bind(gl_buffer* b);
 void gl_renderer_buffer_draw(gl_context* context, gl_buffer* b);
 
 void gl_renderer_set_mvp(gl_context* context, mat4 mvp);
+void gl_renderer_set_texture(gl_context* context, gl_texture* t);
 
 u32 gl_renderer_acquire_instance(gl_context* context);
 void gl_renderer_bind_instance(gl_context* context, u32 vao_instance);

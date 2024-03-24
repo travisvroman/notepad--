@@ -8,6 +8,7 @@
 #include "core/kstring.h"
 #include "core/logger.h"
 #include "defines.h"
+#include "renderer/opengl/gl_backend.h"
 #include "resources/resource_types.h"
 
 // For system fonts.
@@ -173,12 +174,12 @@ b8 font_system_system_font_load(const char* full_path, u16 default_size) {
     return true;
 }
 
-font_data* font_system_acquire(const char* font_name, u16 font_size) {
+font_data* font_system_acquire(u16 font_size) {
     // Get the lookup.
     system_font_lookup* lookup = &state_ptr->loaded_font;
 
     // Search the size variants for the correct size.
-    u32 count = darray_length(lookup->size_variants);
+    u32 count = lookup->size_variants ? darray_length(lookup->size_variants) : 0;
     for (u32 i = 0; i < count; ++i) {
         if (lookup->size_variants[i].size == font_size) {
             // Increment the reference.
@@ -189,7 +190,7 @@ font_data* font_system_acquire(const char* font_name, u16 font_size) {
 
     // If we reach this point, the size variant doesn't exist. Create it.
     font_data variant;
-    if (!create_system_font_variant(lookup, font_size, font_name, &variant)) {
+    if (!create_system_font_variant(lookup, font_size, "", &variant)) {
         KERROR("Failed to create variant: %s, index %i, size %i", lookup->face, lookup->index, font_size);
         return false;
     }
@@ -350,9 +351,9 @@ static b8 setup_font_data(font_data* font) {
 }
 
 static void cleanup_font_data(font_data* font) {
-    // TODO: destroy texture
-    kfree(font->atlas);
-    font->atlas = 0;
+    if (font) {
+        gl_renderer_texture_destroy(0, &font->atlas);
+    }
 }
 
 static b8 create_system_font_variant(system_font_lookup* lookup, u16 size, const char* font_name, font_data* out_variant) {
@@ -374,18 +375,8 @@ static b8 create_system_font_variant(system_font_lookup* lookup, u16 size, const
     }
     darray_length_set(internal_data->codepoints, 96);
 
-    // TODO: Create texture.
-    KASSERT_MSG(false, "Texture creation is required.");
-    /*char font_tex_name[255];
-    string_format(font_tex_name, "__system_text_atlas_%s_i%i_sz%i__", font_name, lookup->index, size);
-    out_variant->atlas = kallocate(sizeof(texture));
-    out_variant->atlas->width = out_variant->atlas_size_x;
-    out_variant->atlas->height = out_variant->atlas_size_y;
-    out_variant->atlas->channel_count = 4;
-    if (!renderer_texture_create(state_ptr->renderer, out_variant->atlas)) {
-        KERROR("Failed to create font texture.");
-        return false;
-    }*/
+    // Create texture.
+    out_variant->atlas = gl_renderer_texture_create(0, out_variant->atlas_size_x, out_variant->atlas_size_y);
 
     // Obtain some metrics
     internal_data->scale = stbtt_ScaleForPixelHeight(&lookup->info, (f32)size);
@@ -438,12 +429,9 @@ static b8 rebuild_system_font_variant_atlas(system_font_lookup* lookup, font_dat
     }
 
     // Write texture data to atlas.
-    // TODO: update texture.
-    KASSERT_MSG(false, "Texture updating is required.");
-    /*if (!renderer_texture_data_set(state_ptr->renderer, variant->atlas, rgba_pixels)) {
-        KERROR("Failed to write font texture data");
-        return false;
-    }*/
+    if (!gl_renderer_texture_data_set(0, &variant->atlas, rgba_pixels)) {
+        KERROR("Failed to update font atlas texture");
+    }
 
     // Free pixel/rgba_pixel data.
     kfree(pixels);
