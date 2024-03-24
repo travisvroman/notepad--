@@ -193,6 +193,8 @@ typedef struct vertex_2d {
     vec2 position;
     /** @brief The texture coordinate of the vertex. */
     vec2 texcoord;
+    /** @brief The colour of the vertex */
+    vec4 colour;
 } vertex_2d;
 
 /**

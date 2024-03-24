@@ -1,6 +1,7 @@
 #pragma once
 
 #include "defines.h"
+#include "renderer/opengl/gl_types.h"
 
 typedef struct system_state_info {
     u64 state_memory_requirement;
@@ -35,6 +36,11 @@ typedef struct applicaton_state {
     system_state_info input_state;
     renderer_system_state_info renderer_state;
     system_state_info font_state;
+
+    gl_context gl;
+
+    gl_buffer vertex_buffer;
+    gl_buffer index_buffer;
 } application_state;
 
 b8 application_run(application_state* out_state);

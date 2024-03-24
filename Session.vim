@@ -13,13 +13,14 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
-badd +69 notepadmm/src/application.c
+badd +104 notepadmm/src/application.c
 badd +446 notepadmm/src/systems/font_system.c
-badd +14 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_types.h
-badd +1 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.h
-badd +132 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c
+badd +22 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_types.h
+badd +22 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.h
+badd +239 ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c
 badd +13 ~/development/notepad--/notepadmm/src/platform/platform.h
 badd +80 ~/development/notepad--/notepadmm/src/platform/platform.c
+badd +198 ~/development/notepad--/notepadmm/src/math/math_types.h
 argglobal
 %argdel
 edit notepadmm/src/application.c
@@ -39,8 +40,8 @@ set winminheight=0
 set winheight=1
 set winminwidth=0
 set winwidth=1
-exe 'vert 1resize ' . ((&columns * 100 + 100) / 200)
-exe 'vert 2resize ' . ((&columns * 99 + 100) / 200)
+exe 'vert 1resize ' . ((&columns * 99 + 100) / 200)
+exe 'vert 2resize ' . ((&columns * 100 + 100) / 200)
 argglobal
 setlocal fdm=manual
 setlocal fde=0
@@ -52,19 +53,19 @@ setlocal fdn=20
 setlocal fen
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 97 - ((25 * winheight(0) + 18) / 37)
+let s:l = 65 - ((18 * winheight(0) + 18) / 37)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 97
-normal! 015|
+keepjumps 65
+normal! 0
 wincmd w
 argglobal
 if bufexists(fnamemodify("~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c", ":p")) | buffer ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c | else | edit ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c | endif
 if &buftype ==# 'terminal'
   silent file ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.c
 endif
-balt ~/development/notepad--/notepadmm/src/platform/platform.c
+balt ~/development/notepad--/notepadmm/src/renderer/opengl/gl_backend.h
 setlocal fdm=manual
 setlocal fde=0
 setlocal fmr={{{,}}}
@@ -75,15 +76,16 @@ setlocal fdn=20
 setlocal fen
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 149 - ((26 * winheight(0) + 18) / 37)
+let s:l = 122 - ((13 * winheight(0) + 18) / 37)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 149
-normal! 0
+keepjumps 122
+normal! 069|
 wincmd w
-exe 'vert 1resize ' . ((&columns * 100 + 100) / 200)
-exe 'vert 2resize ' . ((&columns * 99 + 100) / 200)
+2wincmd w
+exe 'vert 1resize ' . ((&columns * 99 + 100) / 200)
+exe 'vert 2resize ' . ((&columns * 100 + 100) / 200)
 tabnext 1
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0 && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'
   silent exe 'bwipe ' . s:wipebuf
